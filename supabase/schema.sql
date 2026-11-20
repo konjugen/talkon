@@ -107,3 +107,13 @@ CREATE POLICY "Allow public all on comment_likes" ON public.comment_likes FOR AL
 
 CREATE POLICY "Allow public read on invitations" ON public.invitations FOR SELECT USING (true);
 CREATE POLICY "Allow public all on invitations" ON public.invitations FOR ALL USING (true);
+
+-- ====================================================================
+-- Permissions for Supabase anon & authenticated roles
+-- ====================================================================
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;
+
