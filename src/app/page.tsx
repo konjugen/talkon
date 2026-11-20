@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { TalkOnRoom, TalkOnUser, TalkOnComment, TalkOnInvitation } from "@/types/talkon";
 import { countWords } from "@/lib/utils";
+import { persistRoom, persistComment, persistInvitation } from "@/lib/talkonService";
+import { useTalkOnRealtime } from "@/lib/useTalkOnRealtime";
 import { RoomStage } from "@/components/RoomStage";
 import { CommentStream } from "@/components/CommentStream";
 import { ControlsBar } from "@/components/ControlsBar";
@@ -166,6 +168,29 @@ export default function TalkOnApp() {
     (inv) => inv.userId === currentUser.id && inv.roomId === activeRoomId && inv.status === "pending"
   );
 
+  // Real-time synchronization via Supabase
+  useTalkOnRealtime(activeRoomId, {
+    onNewComment: (newComment) => {
+      setComments((prev) => {
+        if (prev.some((c) => c.id === newComment.id)) return prev;
+        return [newComment, ...prev];
+      });
+    },
+    onNewInvitation: (newInv) => {
+      setInvitations((prev) => [
+        ...prev.filter((i) => i.id !== newInv.id),
+        newInv,
+      ]);
+      if (newInv.userId === currentUser.id && newInv.status === "pending") {
+        setIdentities((prev) =>
+          prev.map((u) =>
+            u.id === currentUser.id ? { ...u, speakerState: "invited" } : u
+          )
+        );
+      }
+    },
+  });
+
   // Switch identity (A/B testing)
   const handleSwitchIdentity = (newUser: TalkOnUser) => {
     setCurrentUserId(newUser.id);
@@ -184,6 +209,7 @@ export default function TalkOnApp() {
       createdAt: Date.now(),
     };
 
+    persistRoom(newRoom);
     setRooms((prev) => [newRoom, ...prev]);
     setActiveRoomId(newRoom.id);
     setShowCreateModal(false);
@@ -214,6 +240,7 @@ export default function TalkOnApp() {
       createdAt: Date.now(),
     };
 
+    persistComment(newComment);
     setComments((prev) => [newComment, ...prev]);
   };
 
@@ -245,6 +272,7 @@ export default function TalkOnApp() {
       createdAt: Date.now(),
     };
 
+    persistInvitation(newInvitation);
     setInvitations((prev) => [...prev.filter((i) => i.userId !== targetUserId), newInvitation]);
 
     setIdentities((prev) =>
