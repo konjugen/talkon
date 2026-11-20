@@ -4,13 +4,8 @@ import React, { useState } from "react";
 import { 
   Radio, 
   Sparkles, 
-  Plus, 
-  Globe, 
-  Compass, 
-  HelpCircle,
-  ExternalLink,
-  ShieldCheck,
-  CheckCircle2
+  ArrowLeft,
+  ShieldCheck
 } from "lucide-react";
 import { TalkOnRoom, TalkOnUser, TalkOnComment, TalkOnInvitation } from "@/types/talkon";
 import { countWords } from "@/lib/utils";
@@ -20,6 +15,8 @@ import { ControlsBar } from "@/components/ControlsBar";
 import { MicCheckModal } from "@/components/MicCheckModal";
 import { InvitationBanner } from "@/components/InvitationBanner";
 import { IdentitySwitcher } from "@/components/IdentitySwitcher";
+import { DiscoveryFeed } from "@/components/DiscoveryFeed";
+import { CreateRoomModal } from "@/components/CreateRoomModal";
 
 // Predefined A/B test identities (as defined in TalkOn Master Spec M0)
 const initialIdentities: TalkOnUser[] = [
@@ -55,20 +52,65 @@ const initialIdentities: TalkOnUser[] = [
   },
 ];
 
-const initialRoom: TalkOnRoom = {
-  id: "room-tr-gundem",
-  title: "TR. Türkiye Gündemi, Teknoloji ve Gelecek",
-  topic: "Gündem",
-  country: "Türkiye",
-  language: "Türkçe",
-  moderatorId: "user-mod-1",
-  moderatorHandle: "Saru #01",
-  maxSpeakers: 5,
-  activeSpeakersCount: 1,
-  listenersCount: 12,
-  isLive: true,
-  createdAt: 1732100000000,
-};
+// Predefined rooms from TalkOn specification (Discovery)
+const initialRooms: TalkOnRoom[] = [
+  {
+    id: "room-tr-gundem",
+    title: "TR. Türkiye Gündemi, Teknoloji ve Gelecek",
+    topic: "Gündem",
+    country: "Türkiye",
+    language: "Türkçe",
+    moderatorId: "user-mod-1",
+    moderatorHandle: "Saru #01",
+    maxSpeakers: 5,
+    activeSpeakersCount: 1,
+    listenersCount: 14,
+    isLive: true,
+    createdAt: 1732100000000,
+  },
+  {
+    id: "room-fr-eco",
+    title: "France Economy: Perspectives & Inflation 2026",
+    topic: "Ekonomi & Finans",
+    country: "France",
+    language: "Français",
+    moderatorId: "user-fr-1",
+    moderatorHandle: "Pierre_Echo #09",
+    maxSpeakers: 4,
+    activeSpeakersCount: 2,
+    listenersCount: 8,
+    isLive: true,
+    createdAt: 1732100000000,
+  },
+  {
+    id: "room-night-confessions",
+    title: "Gece İtirafları: Anonim Mikrofon & Hayat Hikayeleri",
+    topic: "Gece İtirafları",
+    country: "Türkiye",
+    language: "Türkçe",
+    moderatorId: "user-mod-2",
+    moderatorHandle: "Nocturne #99",
+    maxSpeakers: 3,
+    activeSpeakersCount: 1,
+    listenersCount: 27,
+    isLive: true,
+    createdAt: 1732100000000,
+  },
+  {
+    id: "room-ai-future",
+    title: "Autonomous Agents & Future of Software Engineering",
+    topic: "Teknoloji & Yapay Zeka",
+    country: "Global",
+    language: "English",
+    moderatorId: "user-ai-1",
+    moderatorHandle: "CyberNomad #42",
+    maxSpeakers: 6,
+    activeSpeakersCount: 3,
+    listenersCount: 45,
+    isLive: true,
+    createdAt: 1732100000000,
+  },
+];
 
 const initialComments: TalkOnComment[] = [
   {
@@ -98,16 +140,22 @@ const initialComments: TalkOnComment[] = [
 export default function TalkOnApp() {
   const [identities, setIdentities] = useState<TalkOnUser[]>(initialIdentities);
   const [currentUserId, setCurrentUserId] = useState<string>("user-mod-1");
-  const [room, setRoom] = useState<TalkOnRoom>(initialRoom);
+  const [rooms, setRooms] = useState<TalkOnRoom[]>(initialRooms);
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [comments, setComments] = useState<TalkOnComment[]>(initialComments);
   const [invitations, setInvitations] = useState<TalkOnInvitation[]>([]);
   const [showMicCheck, setShowMicCheck] = useState<boolean>(false);
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
+  const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
 
   // Active current user
   const currentUser = identities.find((u) => u.id === currentUserId) || identities[0];
-  const isModerator = currentUser.role === "moderator";
+  const activeRoom = rooms.find((r) => r.id === activeRoomId) || null;
+  const isModerator = activeRoom ? activeRoom.moderatorId === currentUser.id : false;
   const isOnStage = currentUser.speakerState === "live_speaker";
+
+  // Filter comments for active room
+  const activeRoomComments = comments.filter((c) => c.roomId === activeRoomId);
 
   // Stage speakers & Audience listeners
   const speakers = identities.filter((u) => u.speakerState === "live_speaker");
@@ -115,7 +163,7 @@ export default function TalkOnApp() {
 
   // Check if current user has a pending invitation
   const activeInvitation = invitations.find(
-    (inv) => inv.userId === currentUser.id && inv.status === "pending"
+    (inv) => inv.userId === currentUser.id && inv.roomId === activeRoomId && inv.status === "pending"
   );
 
   // Switch identity (A/B testing)
@@ -123,13 +171,40 @@ export default function TalkOnApp() {
     setCurrentUserId(newUser.id);
   };
 
+  // Create a new room
+  const handleCreateRoom = (roomData: Omit<TalkOnRoom, "id" | "moderatorId" | "moderatorHandle" | "activeSpeakersCount" | "listenersCount" | "isLive" | "createdAt">) => {
+    const newRoom: TalkOnRoom = {
+      ...roomData,
+      id: `room-${Date.now()}`,
+      moderatorId: currentUser.id,
+      moderatorHandle: currentUser.handle,
+      activeSpeakersCount: 1,
+      listenersCount: 1,
+      isLive: true,
+      createdAt: Date.now(),
+    };
+
+    setRooms((prev) => [newRoom, ...prev]);
+    setActiveRoomId(newRoom.id);
+    setShowCreateModal(false);
+
+    // Set user as live speaker moderator
+    setIdentities((prev) =>
+      prev.map((u) =>
+        u.id === currentUser.id
+          ? { ...u, role: "moderator", speakerState: "live_speaker", isMuted: false }
+          : u
+      )
+    );
+  };
+
   // Add a new comment (Strictly max 15 words)
   const handleSendComment = (text: string) => {
-    if (countWords(text) > 15 || !text.trim()) return;
+    if (!activeRoomId || countWords(text) > 15 || !text.trim()) return;
 
     const newComment: TalkOnComment = {
       id: `c-${Date.now()}`,
-      roomId: room.id,
+      roomId: activeRoomId,
       userId: currentUser.id,
       userHandle: currentUser.handle,
       avatarSeed: currentUser.avatarSeed,
@@ -159,12 +234,11 @@ export default function TalkOnApp() {
 
   // Moderator invites user to speak (Comment-to-Invite mechanic)
   const handleInviteUser = (targetUserId: string, targetUserHandle: string) => {
-    if (!isModerator || targetUserId === currentUser.id) return;
+    if (!isModerator || !activeRoomId || targetUserId === currentUser.id) return;
 
-    // Create or update invitation
     const newInvitation: TalkOnInvitation = {
       id: `inv-${Date.now()}`,
-      roomId: room.id,
+      roomId: activeRoomId,
       userId: targetUserId,
       fromModeratorId: currentUser.id,
       status: "pending",
@@ -173,7 +247,6 @@ export default function TalkOnApp() {
 
     setInvitations((prev) => [...prev.filter((i) => i.userId !== targetUserId), newInvitation]);
 
-    // Update user's speaker state
     setIdentities((prev) =>
       prev.map((u) => (u.id === targetUserId ? { ...u, speakerState: "invited" } : u))
     );
@@ -237,24 +310,39 @@ export default function TalkOnApp() {
     );
   };
 
+  // Leave room and return to Discovery Feed
+  const handleLeaveRoom = () => {
+    setActiveRoomId(null);
+  };
+
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-purple-500 selection:text-white">
       {/* Top Navbar */}
       <header className="sticky top-0 z-30 bg-neutral-950/80 backdrop-blur-lg border-b border-neutral-800/80 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center shadow-md shadow-purple-900/40">
-              <Radio className="w-4 h-4 text-white" />
+          {activeRoom ? (
+            <button
+              onClick={handleLeaveRoom}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-purple-500/50 text-xs font-medium text-neutral-200 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4 text-purple-400" />
+              <span>Odalara Dön</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center shadow-md shadow-purple-900/40">
+                <Radio className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h1 className="text-base font-extrabold tracking-tight bg-gradient-to-r from-white via-neutral-200 to-neutral-400 bg-clip-text text-transparent">
+                  TalkOn
+                </h1>
+                <span className="text-[10px] text-purple-400 block -mt-1 font-medium">
+                  Live Social Audio
+                </span>
+              </div>
             </div>
-            <div>
-              <h1 className="text-base font-extrabold tracking-tight bg-gradient-to-r from-white via-neutral-200 to-neutral-400 bg-clip-text text-transparent">
-                TalkOn
-              </h1>
-              <span className="text-[10px] text-purple-400 block -mt-1 font-medium">
-                Live Social Audio
-              </span>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Identity Switcher & Info */}
@@ -276,55 +364,68 @@ export default function TalkOnApp() {
         </div>
       </header>
 
-      {/* Main Container */}
-      <div className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5 flex flex-col md:grid md:grid-cols-12 gap-4 pb-20 md:pb-5">
-        {/* Left Column: Room Stage & Podium */}
-        <section className="md:col-span-7 flex flex-col gap-4">
-          <RoomStage
-            room={room}
-            speakers={speakers}
-            listeners={listeners}
-          />
-
-          {/* Quick Explanation for TalkOn Philosophy */}
-          <div className="p-3.5 rounded-2xl bg-neutral-900/30 border border-neutral-800/60 text-xs text-neutral-400 flex items-start gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-neutral-200">TalkOn Konuşma Felsefesi (Comment-to-Invite)</p>
-              <p className="mt-0.5 text-neutral-400 leading-relaxed">
-                Dinleyicilerde klasik el kaldırma yoktur. Dinleyici en fazla 15 kelimelik kısa bir fikir yazar. Moderatör beğendiği yorumun sahibini sahneye davet eder.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Right Column: 15-Word Comment Stream */}
-        <section className="md:col-span-5 flex flex-col bg-neutral-900/40 rounded-2xl border border-neutral-800 overflow-hidden min-h-[380px] md:min-h-[500px]">
-          <CommentStream
-            comments={comments}
-            currentUserId={currentUser.id}
-            isModerator={isModerator}
-            onLikeComment={handleLikeComment}
-            onInviteUser={handleInviteUser}
-          />
-        </section>
-      </div>
-
-      {/* Fixed Bottom Controls */}
-      <div className="fixed bottom-0 left-0 right-0 z-20">
-        <ControlsBar
-          isOnStage={isOnStage}
-          isMuted={currentUser.isMuted}
-          onToggleMute={handleToggleMute}
-          onSendComment={handleSendComment}
-          onLeaveRoom={() => alert("Oda oturumu sonlandırıldı.")}
+      {/* Main Content Area */}
+      {!activeRoom ? (
+        /* HOMEPAGE: DISCOVERY FEED */
+        <DiscoveryFeed
+          rooms={rooms}
+          onSelectRoom={(roomId) => setActiveRoomId(roomId)}
+          onOpenCreateModal={() => setShowCreateModal(true)}
+          currentUser={currentUser}
         />
-      </div>
+      ) : (
+        /* INSIDE ROOM: STAGE + 15-WORD STREAM + CONTROLS */
+        <div className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5 flex flex-col md:grid md:grid-cols-12 gap-4 pb-24 md:pb-5">
+          {/* Left Column: Room Stage & Podium */}
+          <section className="md:col-span-7 flex flex-col gap-4">
+            <RoomStage
+              room={activeRoom}
+              speakers={speakers}
+              listeners={listeners}
+            />
+
+            {/* Quick Explanation for TalkOn Philosophy */}
+            <div className="p-3.5 rounded-2xl bg-neutral-900/30 border border-neutral-800/60 text-xs text-neutral-400 flex items-start gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-neutral-200">TalkOn Konuşma Felsefesi (Comment-to-Invite)</p>
+                <p className="mt-0.5 text-neutral-400 leading-relaxed">
+                  Dinleyicilerde klasik el kaldırma yoktur. Dinleyici en fazla 15 kelimelik kısa bir fikir yazar. Moderatör beğendiği yorumun sahibini sahneye davet eder.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* Right Column: 15-Word Comment Stream */}
+          <section className="md:col-span-5 flex flex-col bg-neutral-900/40 rounded-2xl border border-neutral-800 overflow-hidden min-h-[380px] md:min-h-[500px]">
+            <CommentStream
+              comments={activeRoomComments}
+              currentUserId={currentUser.id}
+              isModerator={isModerator}
+              onLikeComment={handleLikeComment}
+              onInviteUser={handleInviteUser}
+            />
+          </section>
+        </div>
+      )}
+
+      {/* Fixed Bottom Controls (Only visible when inside a room) */}
+      {activeRoom && (
+        <div className="fixed bottom-0 left-0 right-0 z-20">
+          <ControlsBar
+            isOnStage={isOnStage}
+            isMuted={currentUser.isMuted}
+            onToggleMute={handleToggleMute}
+            onSendComment={handleSendComment}
+            onLeaveRoom={handleLeaveRoom}
+          />
+        </div>
+      )}
 
       {/* Pending Invitation Banner */}
-      {activeInvitation && (
+      {activeInvitation && activeRoom && (
         <InvitationBanner
-          moderatorHandle={room.moderatorHandle}
+          moderatorHandle={activeRoom.moderatorHandle}
           onAccept={handleAcceptInvite}
           onReject={handleRejectInvite}
         />
@@ -340,6 +441,13 @@ export default function TalkOnApp() {
             prev.map((u) => (u.id === currentUser.id ? { ...u, speakerState: "idle" } : u))
           );
         }}
+      />
+
+      {/* Create Room Modal */}
+      <CreateRoomModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreateRoom={handleCreateRoom}
       />
 
       {/* Text-to-Live & Architecture Modal */}
@@ -365,7 +473,7 @@ export default function TalkOnApp() {
               <div className="bg-neutral-950 p-3.5 rounded-xl border border-neutral-800">
                 <h4 className="font-semibold text-white mb-1">💬 Text-to-Live Nasıl Çalışır?</h4>
                 <p className="leading-relaxed">
-                  Siz sadece sohbete Türkçe olarak ne istediğinizi yazarsınız (örn: <em>&quot;Oda başlığına emoji ekle, renkleri mavi yap&quot;</em>). Antigravity kodu yazar, derler ve GitHub&apos;a pushlar. Vercel 30 saniye içinde yeni versiyonu canlıya basar!
+                  Siz sadece sohbete Türkçe olarak ne istediğinizi yazarsınız (örn: <em>&quot;Ana sayfaya konu filtreleri ekle&quot;</em>). Antigravity kodu yazar, derler ve GitHub&apos;a pushlar. Vercel 30 saniye içinde yeni versiyonu canlıya basar!
                 </p>
               </div>
 
