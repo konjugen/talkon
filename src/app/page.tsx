@@ -9,7 +9,13 @@ import {
 } from "lucide-react";
 import { TalkOnRoom, TalkOnUser, TalkOnComment, TalkOnInvitation } from "@/types/talkon";
 import { countWords } from "@/lib/utils";
-import { persistRoom, persistComment, persistInvitation } from "@/lib/talkonService";
+import { 
+  persistRoom, 
+  persistComment, 
+  persistInvitation, 
+  fetchRoomsFromDb, 
+  fetchCommentsFromDb 
+} from "@/lib/talkonService";
 import { useTalkOnRealtime } from "@/lib/useTalkOnRealtime";
 import { RoomStage } from "@/components/RoomStage";
 import { CommentStream } from "@/components/CommentStream";
@@ -168,8 +174,41 @@ export default function TalkOnApp() {
     (inv) => inv.userId === currentUser.id && inv.roomId === activeRoomId && inv.status === "pending"
   );
 
+  // Load live rooms from Supabase on mount
+  React.useEffect(() => {
+    async function loadInitialRooms() {
+      const dbRooms = await fetchRoomsFromDb();
+      if (dbRooms && dbRooms.length > 0) {
+        setRooms(dbRooms);
+      }
+    }
+    loadInitialRooms();
+  }, []);
+
+  // Load room comments when entering a room
+  React.useEffect(() => {
+    if (!activeRoomId) return;
+    async function loadRoomComments() {
+      const dbComments = await fetchCommentsFromDb(activeRoomId as string);
+      if (dbComments && dbComments.length > 0) {
+        setComments((prev) => {
+          const existingIds = new Set(prev.map((c) => c.id));
+          const newUnique = dbComments.filter((c) => !existingIds.has(c.id));
+          return [...newUnique, ...prev];
+        });
+      }
+    }
+    loadRoomComments();
+  }, [activeRoomId]);
+
   // Real-time synchronization via Supabase
   useTalkOnRealtime(activeRoomId, {
+    onNewRoom: (newRoom) => {
+      setRooms((prev) => {
+        if (prev.some((r) => r.id === newRoom.id)) return prev;
+        return [newRoom, ...prev];
+      });
+    },
     onNewComment: (newComment) => {
       setComments((prev) => {
         if (prev.some((c) => c.id === newComment.id)) return prev;
@@ -197,10 +236,11 @@ export default function TalkOnApp() {
   };
 
   // Create a new room
-  const handleCreateRoom = (roomData: Omit<TalkOnRoom, "id" | "moderatorId" | "moderatorHandle" | "activeSpeakersCount" | "listenersCount" | "isLive" | "createdAt">) => {
+  const handleCreateRoom = async (roomData: Omit<TalkOnRoom, "id" | "moderatorId" | "moderatorHandle" | "activeSpeakersCount" | "listenersCount" | "isLive" | "createdAt">) => {
+    const tempId = `room-${Date.now()}`;
     const newRoom: TalkOnRoom = {
       ...roomData,
-      id: `room-${Date.now()}`,
+      id: tempId,
       moderatorId: currentUser.id,
       moderatorHandle: currentUser.handle,
       activeSpeakersCount: 1,
@@ -209,9 +249,8 @@ export default function TalkOnApp() {
       createdAt: Date.now(),
     };
 
-    persistRoom(newRoom);
     setRooms((prev) => [newRoom, ...prev]);
-    setActiveRoomId(newRoom.id);
+    setActiveRoomId(tempId);
     setShowCreateModal(false);
 
     // Set user as live speaker moderator
@@ -222,6 +261,15 @@ export default function TalkOnApp() {
           : u
       )
     );
+
+    // Persist to Supabase and update ID if returned
+    const persistedId = await persistRoom(newRoom);
+    if (persistedId) {
+      setRooms((prev) =>
+        prev.map((r) => (r.id === tempId ? { ...r, id: persistedId } : r))
+      );
+      setActiveRoomId(persistedId);
+    }
   };
 
   // Add a new comment (Strictly max 15 words)
