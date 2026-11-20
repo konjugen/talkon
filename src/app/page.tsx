@@ -25,6 +25,7 @@ import { InvitationBanner } from "@/components/InvitationBanner";
 import { IdentitySwitcher } from "@/components/IdentitySwitcher";
 import { DiscoveryFeed } from "@/components/DiscoveryFeed";
 import { CreateRoomModal } from "@/components/CreateRoomModal";
+import { LiveKitAudioSession } from "@/components/LiveKitAudioSession";
 
 // Predefined A/B test identities (as defined in TalkOn Master Spec M0)
 const initialIdentities: TalkOnUser[] = [
@@ -453,7 +454,23 @@ export default function TalkOnApp() {
         /* INSIDE ROOM: STAGE + 15-WORD STREAM + CONTROLS */
         <div className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5 flex flex-col md:grid md:grid-cols-12 gap-4 pb-24 md:pb-5">
           {/* Left Column: Room Stage & Podium */}
-          <section className="md:col-span-7 flex flex-col gap-4">
+          <section className="md:col-span-7 flex flex-col gap-3">
+            {/* LiveKit Real-Time WebRTC Audio Engine (M10) */}
+            <LiveKitAudioSession
+              roomId={activeRoom.id}
+              username={currentUser.handle}
+              isOnStage={isOnStage}
+              isMuted={currentUser.isMuted}
+              onActiveSpeakersChange={(speakingHandles) => {
+                setIdentities((prev) =>
+                  prev.map((u) => ({
+                    ...u,
+                    isSpeaking: speakingHandles.includes(u.handle),
+                  }))
+                );
+              }}
+            />
+
             <RoomStage
               room={activeRoom}
               speakers={speakers}
